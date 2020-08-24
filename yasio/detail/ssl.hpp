@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A cross platform socket APIs, support ios & android & wp8 & window store
-// universal app
+// A cross platform socket APIs, support ios & android & wp8 & window store universal app
+//
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
@@ -25,30 +25,15 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef YASIO__LUA_HPP
-#define YASIO__LUA_HPP
 
-#if !defined(YASIO_LUA_ENABLE_GLOBAL)
-#  define YASIO_LUA_ENABLE_GLOBAL 0
-#endif
+#ifndef YASIO__SSL_HPP
+#define YASIO__SSL_HPP
 
-#if defined(_WINDLL)
-#  if defined(LUA_LIB)
-#    define YASIO_LUA_API __declspec(dllexport)
-#  else
-#    define YASIO_LUA_API __declspec(dllimport)
-#  endif
-#else
-#  define YASIO_LUA_API
-#endif
-
-#if defined(__cplusplus)
-extern "C" {
-#endif
-struct lua_State;
-YASIO_LUA_API int luaopen_yasio(lua_State* L);
-#if defined(__cplusplus)
-}
+#include <openssl/bio.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#if OPENSSL_VERSION_NUMBER >= 0x10101000L
+#  define YASIO_HAVE_SSL_CTX_SET_POST_HANDSHAKE_AUTH
 #endif
 
 #endif

@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A cross platform socket APIs, support ios & android & wp8 & window store
-// universal app
+// A cross platform socket APIs, support ios & android & wp8 & window store universal app
+//
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
@@ -25,30 +25,19 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef YASIO__LUA_HPP
-#define YASIO__LUA_HPP
+package org.yasio;
 
-#if !defined(YASIO_LUA_ENABLE_GLOBAL)
-#  define YASIO_LUA_ENABLE_GLOBAL 0
-#endif
+import android.content.Context;
 
-#if defined(_WINDLL)
-#  if defined(LUA_LIB)
-#    define YASIO_LUA_API __declspec(dllexport)
-#  else
-#    define YASIO_LUA_API __declspec(dllimport)
-#  endif
-#else
-#  define YASIO_LUA_API
-#endif
+public final class AppGlobals {
+    private static Context sApplicationContext = null;
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-struct lua_State;
-YASIO_LUA_API int luaopen_yasio(lua_State* L);
-#if defined(__cplusplus)
+    public static void init(Context ctx) {
+        sApplicationContext = ctx.getApplicationContext();
+    }
+
+    @SuppressWarnings("unused")
+    public static Context getApplicationContext() {
+        return sApplicationContext;
+    }
 }
-#endif
-
-#endif
