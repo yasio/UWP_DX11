@@ -108,11 +108,6 @@ SOFTWARE.
 */
 // #define YASIO_MINIFY_EVENT 1
 
-/*
-** Uncomment or add compiler flag -DYASIO_NO_EXCEPTIONS to disable exceptions
-*/
-// #define YASIO_NO_EXCEPTIONS 1
-
 #if defined(YASIO_HEADER_ONLY)
 #  define YASIO__DECL inline
 #else
@@ -139,12 +134,6 @@ SOFTWARE.
 #  define YASIO_LOGV YASIO_LOG
 #endif
 
-#if !defined(YASIO_NO_EXCEPTIONS)
-#  define YASIO__THROW(x, retval) throw(x)
-#else
-#  define YASIO__THROW(x, retval) return (retval)
-#endif
-
 #define YASIO_ARRAYSIZE(A) (sizeof(A) / sizeof((A)[0]))
 
 /*
@@ -163,7 +152,7 @@ SOFTWARE.
 /*
 **  The yasio version macros
 */
-#define YASIO_VERSION_NUM 0x033307
+#define YASIO_VERSION_NUM 0x033401
 
 /*
 ** The macros used by io_service.

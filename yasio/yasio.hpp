@@ -81,25 +81,26 @@ namespace inet
 enum
 { // lgtm [cpp/irregular-enum-init]
 
-  // Set with deferred dispatch event, default is: 1
+  // Set with deferred dispatch event.
   // params: deferred_event:int(1)
   YOPT_S_DEFERRED_EVENT = 1,
 
-  // Set custom resolve function, native C++ ONLY
+  // Set custom resolve function, native C++ ONLY.
   // params: func:resolv_fn_t*
+  // remarks: you must ensure thread safe of it.
   YOPT_S_RESOLV_FN,
 
-  // Set custom print function, native C++ ONLY, you must ensure thread safe of it.
-  // remark:
+  // Set custom print function, native C++ ONLY.
   // parmas: func:print_fn_t
+  // remarks: you must ensure thread safe of it.
   YOPT_S_PRINT_FN,
 
-  // Set custom print function, native C++ ONLY, you must ensure thread safe of it.
-  // remark:
+  // Set custom print function, native C++ ONLY.
   // parmas: func:print_fn2_t
+  // remarks: you must ensure thread safe of it.
   YOPT_S_PRINT_FN2,
 
-  // Set custom print function
+  // Set event callback
   // params: func:event_cb_t*
   YOPT_S_EVENT_CB,
 
@@ -108,11 +109,11 @@ enum
   YOPT_S_TCP_KEEPALIVE,
 
   // Don't start a new thread to run event loop
-  // value:int(0)
+  // params: value:int(0)
   YOPT_S_NO_NEW_THREAD,
 
   // Sets ssl verification cert, if empty, don't verify
-  // value:const char*
+  // params: path:const char*
   YOPT_S_SSL_CACERT,
 
   // Set connect timeout in seconds
@@ -123,9 +124,9 @@ enum
   // params: dns_cache_timeout : int(600),
   YOPT_S_DNS_CACHE_TIMEOUT,
 
-  // Set dns queries timeout in seconds, default is: 5
-  // params: dns_queries_timeout : int(5)
-  // remark:
+  // Set dns queries timeout in milliseconds, default is: 5000
+  // params: dns_queries_timeout : int(5000)
+  // remarks:
   //         a. this option must be set before 'io_service::start'
   //         b. only works when have c-ares
   //         c. since v3.33.0 it's milliseconds, previous is seconds.
@@ -135,27 +136,22 @@ enum
   //         https://c-ares.haxx.se/ares_init_options.html
   YOPT_S_DNS_QUERIES_TIMEOUT,
 
-  // Set dns queries timeout in milliseconds, default is: 5000
-  // remark: same with YOPT_S_DNS_QUERIES_TIMEOUT, but in mmilliseconds
+  // [DEPRECATED], same with YOPT_S_DNS_QUERIES_TIMEOUT
   YOPT_S_DNS_QUERIES_TIMEOUTMS,
 
   // Set dns queries tries when timeout reached, default is: 5
   // params: dns_queries_tries : int(5)
-  // remark:
+  // remarks:
   //        a. this option must be set before 'io_service::start'
   //        b. relative option: YOPT_S_DNS_QUERIES_TIMEOUT
   YOPT_S_DNS_QUERIES_TRIES,
 
   // Set dns server dirty
   // params: reserved : int(1)
-  // remark:
+  // remarks:
   //        a. this option only works with c-ares enabled
   //        b. you should set this option after your mobile network changed
   YOPT_S_DNS_DIRTY,
-
-  // Set whether ignore udp error, by default is 1: don't trigger handle_close,
-  // params: ignored : int(1)
-  YOPT_S_IGNORE_UDP_ERROR,
 
   // Sets channel length field based frame decode function, native C++ ONLY
   // params: index:int, func:decode_len_fn_t*
@@ -170,7 +166,7 @@ enum
   //     length_adjustment:int(0),
   YOPT_C_LFBFD_PARAMS,
 
-  // Sets channel length field based frame decode initial bytes to strip, default is 0
+  // Sets channel length field based frame decode initial bytes to strip
   // params:
   //     index:int,
   //     initial_bytes_to_strip:int(0)
@@ -200,7 +196,7 @@ enum
   // params: index:int, ip:const char*, port:int
   YOPT_C_LOCAL_ENDPOINT,
 
-  // Sets channl flags
+  // Mods channl flags
   // params: index:int, flagsToAdd:int, flagsToRemove:int
   YOPT_C_MOD_FLAGS,
 
@@ -218,12 +214,12 @@ enum
 
   // Change 4-tuple association for io_transport_udp
   // params: transport:transport_handle_t
-  // remark: only works for udp client transport
+  // remarks: only works for udp client transport
   YOPT_T_CONNECT,
 
   // Dissolve 4-tuple association for io_transport_udp
   // params: transport:transport_handle_t
-  // remark: only works for udp client transport
+  // remarks: only works for udp client transport
   YOPT_T_DISCONNECT,
 
   // Sets io_base sockopt
@@ -324,10 +320,10 @@ typedef completion_cb_t io_completion_cb_t;
 
 struct io_hostent {
   io_hostent() = default;
-  io_hostent(std::string ip, u_short port) : host_(std::move(ip)), port_(port) {}
+  io_hostent(cxx17::string_view ip, u_short port) : host_(cxx17::svtos(ip)), port_(port) {}
   io_hostent(io_hostent&& rhs) : host_(std::move(rhs.host_)), port_(rhs.port_) {}
   io_hostent(const io_hostent& rhs) : host_(rhs.host_), port_(rhs.port_) {}
-  void set_ip(const std::string& value) { host_ = value; }
+  void set_ip(cxx17::string_view ip) { cxx17::assign(host_, ip); }
   const std::string& get_ip() const { return host_; }
   void set_port(u_short port) { port_ = port; }
   u_short get_port() const { return port_; }
@@ -382,21 +378,35 @@ public:
 };
 
 struct io_base {
-  enum class state : u_short
+  enum class state : uint8_t
   {
     CLOSED,
     OPENING,
     OPEN,
   };
+  enum class error_stage : uint8_t
+  {
+    NONE,
+    READ,
+    WRITE,
+  };
   io_base() : error_(0), state_(state::CLOSED), opmask_(0) {}
   virtual ~io_base() {}
-  void set_last_errno(int error) { error_ = error; }
+  void set_last_errno(int error, error_stage stage = error_stage::NONE)
+  {
+    error_       = error;
+    error_stage_ = stage;
+  }
 
   std::shared_ptr<xxsocket> socket_;
   int error_; // socket error(>= -1), application error(< -1)
+  // 0: none, 1: read, 2: write
+  error_stage error_stage_ = error_stage::NONE;
 
+  // mark whether pollout event registerred.
+  bool pollout_registerred_ = false;
   std::atomic<state> state_;
-  u_short opmask_;
+  uint8_t opmask_;
 };
 
 #if defined(YASIO_HAVE_SSL)
@@ -442,6 +452,7 @@ public:
   io_service& get_service() { return timer_.service_; }
   int index() const { return index_; }
   u_short remote_port() const { return remote_port_; }
+  YASIO__DECL std::string format_destination() const;
 
 protected:
   YASIO__DECL void enable_multicast_group(const ip::endpoint& ep, int loopback);
@@ -452,13 +463,13 @@ protected:
 private:
   YASIO__DECL io_channel(io_service& service, int index);
 
-  void set_address(std::string host, u_short port)
+  void set_address(cxx17::string_view host, u_short port)
   {
     set_host(host);
     set_port(port);
   }
 
-  YASIO__DECL void set_host(std::string host);
+  YASIO__DECL void set_host(cxx17::string_view host);
   YASIO__DECL void set_port(u_short port);
 
   // configure address, check whether needs dns queries
@@ -538,6 +549,7 @@ private:
 #endif
 };
 
+// for tcp transport only
 class io_send_op {
 public:
   io_send_op(std::vector<char>&& buffer, completion_cb_t&& handler) : offset_(0), buffer_(std::move(buffer)), handler_(std::move(handler)) {}
@@ -554,6 +566,7 @@ public:
 #endif
 };
 
+// for udp transport only
 class io_sendto_op : public io_send_op {
 public:
   io_sendto_op(std::vector<char>&& buffer, completion_cb_t&& handler, const ip::endpoint& destination)
@@ -636,13 +649,11 @@ protected:
 
   io_channel* ctx_;
 
-  std::function<int(const void*, int)> write_cb_;
+  std::function<int(const void*, int, const ip::endpoint*)> write_cb_;
   std::function<int(void*, int)> read_cb_;
 
   privacy::concurrent_queue<send_op_ptr> send_queue_;
 
-  // mark whether pollout event registerred.
-  bool pollout_registerred_ = false;
 #if !defined(YASIO_MINIFY_EVENT)
 private:
   // The user data
@@ -700,8 +711,8 @@ protected:
   // process received data from low level
   YASIO__DECL virtual int handle_input(const char* buf, int bytes_transferred, int& error, highp_time_t& wait_duration);
 
-  ip::endpoint peer_;                // for recv only
-  mutable ip::endpoint destination_; // for sendto only
+  ip::endpoint peer_;                // for recv only, unstable
+  mutable ip::endpoint destination_; // for sendto only, stable
   bool connected_ = false;
 };
 #if defined(YASIO_HAVE_KCP)
@@ -820,10 +831,11 @@ public:
   ** Summary: init global state with custom print function, you must ensure thread safe of it.
   ** @remark:
   **   a. this function is not required, if you don't want print init log to custom console.
-  **   b.this function only works once
+  **   b. this function only works once
   **   c. you should call once before call any 'io_servic::start'
   */
   YASIO__DECL static void init_globals(const yasio::inet::print_fn2_t&);
+  YASIO__DECL static void cleanup_globals();
 
 public:
   YASIO__DECL io_service();
@@ -1081,7 +1093,7 @@ private:
     highp_time_t dns_queries_timeout_ = 5LL * std::micro::den;
     int dns_queries_tries_            = 5;
 
-    bool dns_dirty_                   = true; // only for c-ares
+    bool dns_dirty_ = true; // only for c-ares
 
     bool deferred_event_ = true;
 
@@ -1093,8 +1105,7 @@ private:
       int probs    = 10;
     } tcp_keepalive_;
 
-    bool no_new_thread_    = false;
-    bool ignore_udp_error_ = true;
+    bool no_new_thread_ = false;
 
     // The resolve function
     resolv_fn_t resolv_;

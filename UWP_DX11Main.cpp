@@ -16,7 +16,7 @@ using namespace yasio::inet;
 #define YASIO_USERAGENT                                                                               \
   "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "  \
   "Chrome/"                                                                                        \
-  "81.0.4044.129"                                                                                   \
+  "87.0.4820.88"                                                                                   \
   " Safari/537.36"_sv
 #endif
 
