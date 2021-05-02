@@ -1,11 +1,11 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A cross platform socket APIs, support ios & android & wp8 & window store universal app
-//
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any 
+// client application.
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2020 HALX99
+Copyright (c) 2012-2021 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -192,7 +192,7 @@ int yasio__jni_onload(void* vm, void* /*reserved*/)
 
   return JNI_VERSION_1_6;
 }
-#  if defined(YASIO_BUILD_AS_SHARED)
+#  if defined(YASIO_SHARED_LIB) && !defined(YASIO_NO_JNI_ONLOAD)
 jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) { return yasio__jni_onload(vm, reserved); }
 #  endif
 }

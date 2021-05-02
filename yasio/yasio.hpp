@@ -1,11 +1,11 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A cross platform socket APIs, support ios & android & wp8 & window store
-// universal app
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any
+// client application.
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2020 HALX99
+Copyright (c) 2012-2021 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -60,7 +60,7 @@ SOFTWARE.
 typedef struct IKCPCB ikcpcb;
 #endif
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
 typedef struct ssl_ctx_st SSL_CTX;
 typedef struct ssl_st SSL;
 #endif
@@ -170,13 +170,15 @@ enum
   //     length_field_offset:int(-1),
   //     length_field_length:int(4),
   //     length_adjustment:int(0),
-  YOPT_C_LFBFD_PARAMS,
+  YOPT_C_UNPACK_PARAMS,
+  YOPT_C_LFBFD_PARAMS = YOPT_C_UNPACK_PARAMS,
 
   // Sets channel length field based frame decode initial bytes to strip
   // params:
   //     index:int,
   //     initial_bytes_to_strip:int(0)
-  YOPT_C_LFBFD_IBTS,
+  YOPT_C_UNPACK_STRIP,
+  YOPT_C_LFBFD_IBTS = YOPT_C_UNPACK_STRIP,
 
   // Sets channel remote host
   // params: index:int, ip:const char*
@@ -307,12 +309,12 @@ typedef std::unique_ptr<io_send_op> send_op_ptr;
 typedef std::unique_ptr<io_event> event_ptr;
 typedef std::shared_ptr<highp_timer> highp_timer_ptr;
 
-typedef std::function<bool()> timer_cb_t;
-typedef std::function<void()> light_timer_cb_t;
+typedef std::function<bool(io_service&)> timer_cb_t;
+typedef std::function<void(io_service&)> timerv_cb_t;
 typedef std::function<void(event_ptr&&)> event_cb_t;
 typedef std::function<bool(event_ptr&)> defer_event_cb_t;
 typedef std::function<void(int, size_t)> completion_cb_t;
-typedef std::function<int(void* ptr, int len)> decode_len_fn_t;
+typedef std::function<int(void* d, int n)> decode_len_fn_t;
 typedef std::function<int(std::vector<ip::endpoint>&, const char*, unsigned short)> resolv_fn_t;
 typedef std::function<void(const char*)> print_fn_t;
 typedef std::function<void(int level, const char*)> print_fn2_t;
@@ -338,11 +340,8 @@ struct io_hostent {
   u_short port_ = 0;
 };
 
-class highp_timer {
+class YASIO_API highp_timer {
 public:
-  ~highp_timer() {}
-  highp_timer(io_service& service) : service_(service) {}
-
   void expires_from_now(const std::chrono::microseconds& duration)
   {
     this->duration_    = duration;
@@ -352,14 +351,14 @@ public:
   void expires_from_now() { this->expire_time_ = steady_clock_t::now() + this->duration_; }
 
   // Wait timer timeout once.
-  void async_wait_once(light_timer_cb_t cb)
+  void async_wait_once(io_service& service, timerv_cb_t cb)
   {
 #if YASIO__HAS_CXX14
-    this->async_wait([cb = std::move(cb)]() {
+    this->async_wait(service, [cb = std::move(cb)](io_service& service) {
 #else
-    this->async_wait([cb]() {
+    this->async_wait(service, [cb](io_service& service) {
 #endif
-      cb();
+      cb(service);
       return true;
     });
   }
@@ -368,10 +367,10 @@ public:
   // @retval of timer_cb_t:
   //        true: wait once
   //        false: wait again after expired
-  YASIO__DECL void async_wait(timer_cb_t);
+  YASIO__DECL void async_wait(io_service& service, timer_cb_t);
 
   // Cancel the timer
-  YASIO__DECL void cancel();
+  YASIO__DECL void cancel(io_service& service);
 
   // Check if timer is expired?
   bool expired() const { return wait_duration().count() <= 0; }
@@ -379,12 +378,11 @@ public:
   // Gets wait duration of timer.
   std::chrono::microseconds wait_duration() const { return std::chrono::duration_cast<std::chrono::microseconds>(this->expire_time_ - steady_clock_t::now()); }
 
-  io_service& service_;
   std::chrono::microseconds duration_                  = {};
   std::chrono::time_point<steady_clock_t> expire_time_ = {};
 };
 
-struct io_base {
+struct YASIO_API io_base {
   enum class state : uint8_t
   {
     CLOSED,
@@ -416,7 +414,7 @@ struct io_base {
   uint8_t opmask_;
 };
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
 class ssl_auto_handle {
 public:
   ssl_auto_handle() : ssl_(nullptr) {}
@@ -447,7 +445,7 @@ protected:
 };
 #endif
 
-class io_channel : public io_base {
+class YASIO_API io_channel : public io_base {
   friend class io_service;
   friend class io_transport;
   friend class io_transport_tcp;
@@ -456,10 +454,13 @@ class io_channel : public io_base {
   friend class io_transport_kcp;
 
 public:
-  io_service& get_service() { return timer_.service_; }
+  io_service& get_service() { return service_; }
   int index() const { return index_; }
   u_short remote_port() const { return remote_port_; }
   YASIO__DECL std::string format_destination() const;
+
+  long long bytes_transferred() const { return bytes_transferred_; }
+  unsigned int connect_id() const { return connect_id_; }
 
 protected:
   YASIO__DECL void enable_multicast_group(const ip::endpoint& ep, int loopback);
@@ -483,7 +484,9 @@ private:
   YASIO__DECL void configure_address();
 
   // -1 indicate failed, connection will be closed
-  YASIO__DECL int __builtin_decode_len(void* ptr, int len);
+  YASIO__DECL int __builtin_decode_len(void* d, int n);
+
+  io_service& service_;
 
   /* Since v3.33.0 mask,kind,flags,private_flags are stored to this field
   ** bit[1-8] mask & kinds
@@ -515,13 +518,14 @@ private:
   // The timer for check resolve & connect timeout
   highp_timer timer_;
 
+  // The stream mode application protocol (based on tcp/udp/kcp) unpack params
   struct __unnamed01 {
     int max_frame_length       = YASIO_SZ(10, M); // 10MBytes
-    int length_field_offset    = -1;              // -1: directly, >= 0: store as 1~4bytes integer, default value=-1
+    int length_field_offset    = -1;              // -1: directly, >= 0: store as 1~4bytes integer
     int length_field_length    = 4;               // 1,2,3,4
     int length_adjustment      = 0;
     int initial_bytes_to_strip = 0;
-  } lfb_;
+  } uparams_;
   decode_len_fn_t decode_len_;
 
   /*
@@ -543,11 +547,16 @@ private:
   // Current it's only for UDP
   std::vector<char> buffer_;
 
+  // The bytes transferred from socket low layer, currently, only works for client channel
+  long long bytes_transferred_ = 0;
+
+  unsigned int connect_id_ = 0;
+
 #if defined(YASIO_HAVE_KCP)
   int kcp_conv_ = 0;
 #endif
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
   ssl_auto_handle ssl_;
 #endif
 
@@ -557,7 +566,7 @@ private:
 };
 
 // for tcp transport only
-class io_send_op {
+class YASIO_API io_send_op {
 public:
   io_send_op(std::vector<char>&& buffer, completion_cb_t&& handler) : offset_(0), buffer_(std::move(buffer)), handler_(std::move(handler)) {}
   virtual ~io_send_op() {}
@@ -574,7 +583,7 @@ public:
 };
 
 // for udp transport only
-class io_sendto_op : public io_send_op {
+class YASIO_API io_sendto_op : public io_send_op {
 public:
   io_sendto_op(std::vector<char>&& buffer, completion_cb_t&& handler, const ip::endpoint& destination)
       : io_send_op(std::move(buffer), std::move(handler)), destination_(destination)
@@ -649,7 +658,7 @@ protected:
   unsigned int id_;
 
   char buffer_[YASIO_INET_BUFFER_SIZE]; // recv buffer, 64K
-  int wpos_ = 0;                        // recv buffer write pos
+  int offset_ = 0;                      // recv buffer offset
 
   std::vector<char> expected_packet_;
   int expected_size_ = -1;
@@ -671,19 +680,19 @@ private:
 #endif
 };
 
-class io_transport_tcp : public io_transport {
+class YASIO_API io_transport_tcp : public io_transport {
   friend class io_service;
 
 public:
   io_transport_tcp(io_channel* ctx, std::shared_ptr<xxsocket>& s);
 };
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
 class io_transport_ssl : public io_transport_tcp {
 public:
   YASIO__DECL io_transport_ssl(io_channel* ctx, std::shared_ptr<xxsocket>& s);
   YASIO__DECL void set_primitives() override;
 
-#  if defined(YASIO_HAVE_SSL)
+#  if defined(YASIO_SSL_BACKEND)
 protected:
   ssl_auto_handle ssl_;
 #  endif
@@ -691,7 +700,7 @@ protected:
 #else
 class io_transport_ssl {};
 #endif
-class io_transport_udp : public io_transport {
+class YASIO_API io_transport_udp : public io_transport {
   friend class io_service;
 
 public:
@@ -747,6 +756,24 @@ protected:
 class io_transport_kcp {};
 #endif
 
+using io_packet = std::vector<char>;
+#if !defined(YASIO_USE_SHARED_PACKET)
+using packet_t = io_packet;
+inline packet_t wrap_packet(io_packet& raw_packet) { return std::move(raw_packet); }
+inline bool is_packet_empty(packet_t& pkt) { return pkt.empty(); }
+inline io_packet& forward_packet(packet_t& pkt) { return pkt; }
+inline io_packet&& forward_packet(packet_t&& pkt) { return std::move(pkt); }
+inline io_packet::pointer packet_data(packet_t& pkt) { return pkt.data(); }
+inline io_packet::size_type packet_len(packet_t& pkt) { return pkt.size(); }
+#else
+using packet_t = std::shared_ptr<io_packet>;
+inline packet_t wrap_packet(io_packet& raw_packet) { return std::make_shared<io_packet>(std::move(raw_packet)); }
+inline bool is_packet_empty(packet_t& pkt) { return !pkt; }
+inline io_packet& forward_packet(packet_t& pkt) { return *pkt; }
+inline io_packet&& forward_packet(packet_t&& pkt) { return std::move(*pkt); }
+inline io_packet::pointer packet_data(packet_t& pkt) { return pkt->data(); }
+inline io_packet::size_type packet_len(packet_t& pkt) { return pkt->size(); }
+#endif
 class io_event final {
 public:
   io_event(int cindex, int kind, int error)
@@ -764,7 +791,7 @@ public:
 #endif
   {}
   io_event(int cindex, int kind, transport_handle_t transport, std::vector<char> packet)
-      : cindex_(cindex), kind_(kind), status_(0), transport_(transport), packet_(std::move(packet))
+      : cindex_(cindex), kind_(kind), status_(0), transport_(transport), packet_(wrap_packet(packet))
 #if !defined(YASIO_MINIFY_EVENT)
         ,
         timestamp_(highp_clock()), transport_udata_(transport->ud_.ptr), transport_id_(transport->id_)
@@ -784,7 +811,7 @@ public:
   int kind() const { return kind_; }
   int status() const { return status_; }
 
-  std::vector<char>& packet() { return packet_; }
+  packet_t& packet() { return packet_; }
   transport_handle_t transport() const { return transport_; }
 
 #if !defined(YASIO_MINIFY_EVENT)
@@ -808,7 +835,7 @@ private:
   int kind_;
   int status_;
   transport_handle_t transport_;
-  std::vector<char> packet_;
+  packet_t packet_;
 #if !defined(YASIO_MINIFY_EVENT)
   highp_time_t timestamp_;
   void* transport_udata_;
@@ -816,7 +843,7 @@ private:
 #endif
 };
 
-class io_service // lgtm [cpp/class-many-fields]
+class YASIO_API io_service // lgtm [cpp/class-many-fields]
 {
   friend class highp_timer;
   friend class io_transport;
@@ -844,6 +871,9 @@ public:
   YASIO__DECL static void init_globals(const yasio::inet::print_fn2_t&);
   YASIO__DECL static void cleanup_globals();
 
+  // the additional API to get rtt of tcp transport
+  YASIO__DECL static unsigned int tcp_rtt(transport_handle_t);
+
 public:
   YASIO__DECL io_service();
   YASIO__DECL io_service(int channel_count);
@@ -851,12 +881,6 @@ public:
   YASIO__DECL io_service(const std::vector<io_hostent>& channel_eps);
   YASIO__DECL io_service(const io_hostent* channel_eps, int channel_count);
   YASIO__DECL ~io_service();
-
-  YASIO_OBSOLETE_DEPRECATE(io_service::start)
-  void start_service(event_cb_t cb) { this->start(std::move(cb)); }
-
-  YASIO_OBSOLETE_DEPRECATE(io_service::stop)
-  void stop_service() { this->stop(); };
 
   YASIO__DECL void start(event_cb_t cb);
   YASIO__DECL void stop();
@@ -884,9 +908,6 @@ public:
   YASIO__DECL void close(transport_handle_t);
   // close channel
   YASIO__DECL void close(int index);
-
-  // the additional API to get rtt of tcp transport
-  YASIO__DECL static uint32_t tcp_rtt(transport_handle_t);
 
   /*
   ** Summary: Write data to a TCP or connected UDP transport with last peer address
@@ -922,16 +943,7 @@ public:
   // The highp_timer support, !important, the callback is called on the thread of io_service
   YASIO__DECL highp_timer_ptr schedule(const std::chrono::microseconds& duration, timer_cb_t);
 
-  YASIO_OBSOLETE_DEPRECATE(io_service::resolve)
-  YASIO__DECL int builtin_resolv(std::vector<ip::endpoint>& endpoints, const char* hostname, unsigned short port = 0)
-  {
-    return this->resolve(endpoints, hostname, port);
-  }
-
   YASIO__DECL int resolve(std::vector<ip::endpoint>& endpoints, const char* hostname, unsigned short port = 0);
-
-  YASIO_OBSOLETE_DEPRECATE(io_service::channel_at)
-  io_channel* cindex_to_handle(size_t index) const { return channel_at(index); }
 
   // Gets channel by index
   YASIO__DECL io_channel* channel_at(size_t index) const;
@@ -976,10 +988,9 @@ private:
   YASIO__DECL void do_nonblocking_connect(io_channel*);
   YASIO__DECL void do_nonblocking_connect_completion(io_channel*, fd_set* fds_array);
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
   YASIO__DECL void init_ssl_context();
   YASIO__DECL void cleanup_ssl_context();
-  YASIO__DECL SSL_CTX* get_ssl_context();
   YASIO__DECL void do_ssl_handshake(io_channel*);
 #endif
 
@@ -1122,15 +1133,15 @@ private:
     // The custom debug print function
     print_fn2_t print_;
 
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
     // The full path cacert(.pem) file for ssl verifaction
-    std::string capath_;
+    std::string cafile_;
 #endif
   } options_;
 
   // The ip stack version supported by localhost
   u_short ipsv_ = 0;
-#if defined(YASIO_HAVE_SSL)
+#if defined(YASIO_SSL_BACKEND)
   SSL_CTX* ssl_ctx_ = nullptr;
 #endif
 #if defined(YASIO_HAVE_CARES)
