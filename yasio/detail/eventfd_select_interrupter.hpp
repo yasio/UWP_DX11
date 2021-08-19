@@ -1,5 +1,5 @@
 //////////////////////////////////////////////////////////////////////////////////////////
-// A multi-platform support c++11 library with focus on asynchronous socket I/O for any 
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any
 // client application.
 //////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -18,10 +18,12 @@
 #ifndef YASIO__EVENTFD_SELECT_INTERRUPTER_HPP
 #define YASIO__EVENTFD_SELECT_INTERRUPTER_HPP
 
+#include "yasio/compiler/feature_test.hpp"
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
-#if __GLIBC__ == 2 && __GLIBC_MINOR__ < 8
+#if defined(__GLIBC__) && (__GLIBC__ == 2 && __GLIBC_MINOR__ < 8)
 #  include <asm/unistd.h>
 #else // __GLIBC__ == 2 && __GLIBC_MINOR__ < 8
 #  include <sys/eventfd.h>
@@ -31,11 +33,11 @@
 
 namespace yasio
 {
+YASIO__NS_INLINE
 namespace inet
 {
 
-class eventfd_select_interrupter
-{
+class eventfd_select_interrupter {
 public:
   // Constructor.
   inline eventfd_select_interrupter() { open_descriptors(); }
@@ -106,7 +108,7 @@ private:
   // Open the descriptors. Throws on error.
   inline void open_descriptors()
   {
-#if __GLIBC__ == 2 && __GLIBC_MINOR__ < 8
+#if defined(__GLIBC__) && (__GLIBC__ == 2 && __GLIBC_MINOR__ < 8)
     write_descriptor_ = read_descriptor_ = syscall(__NR_eventfd, 0);
     if (read_descriptor_ != -1)
     {

@@ -1,6 +1,6 @@
-//////////////////////////////////////////////////////////////////////////////////////////
-// A multi-platform support c++11 library with focus on asynchronous socket I/O for any 
+// A multi-platform support c++11 library with focus on asynchronous socket I/O for any
 // client application.
+//
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
@@ -25,10 +25,24 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef YASIO__UELUA_HPP
-#define YASIO__UELUA_HPP
+#ifndef YASIO__FWD_HPP
+#define YASIO__FWD_HPP
+#include "yasio/compiler/feature_test.hpp"
 
-void yasio_uelua_init(void* L);
-void yasio_uelua_cleanup();
+namespace yasio
+{
+YASIO__NS_INLINE
+namespace inet
+{
+class highp_timer;
+class io_service;
+class io_event;
+class io_channel;
+typedef class io_transport* transport_handle_t;
+} // namespace inet
+#if !YASIO__HAS_NS_INLINE
+using namespace yasio::inet;
+#endif
+} // namespace yasio
 
 #endif
