@@ -97,15 +97,31 @@ SOFTWARE.
 #  define YASIO__HAS_UDS 0
 #endif
 
-// Test whether sockaddr has member 'sa_len'
-#if defined(__linux__) || defined(_WIN32)
-#  define YASIO__HAS_SA_LEN 0
+// Tests whether current OS support route client io event in kernel for udp server
+#if defined(_WIN32)
+#  define YASIO__UDP_KROUTE 0
 #else
-#  if defined(__unix__) || defined(__APPLE__)
-#    define YASIO__HAS_SA_LEN 1
+#  define YASIO__UDP_KROUTE 1
+#endif
+
+// Tests whether current OS is BSD-like system for process common BSD socket behaviors
+#if !defined(_WIN32) && !defined(__linux__)
+#  include <sys/param.h>
+#  if defined(BSD) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__bsdi__) || defined(__DragonFly__)
+#    define YASIO__OS_BSD_LIKE 1
 #  else
-#    define YASIO__HAS_SA_LEN 0
+#    define YASIO__OS_BSD_LIKE 0
 #  endif
+#else
+#  define YASIO__OS_BSD_LIKE 0
+#endif
+
+// Test whether sockaddr has member 'sa_len'
+// see also: https://github.com/freebsd/freebsd-src/blob/main/sys/sys/socket.h#L329
+#if YASIO__OS_BSD_LIKE
+#  define YASIO__HAS_SA_LEN 1
+#else
+#  define YASIO__HAS_SA_LEN 0
 #endif
 
 #if !defined(_WIN32) || defined(NTDDI_VISTA)
@@ -129,11 +145,9 @@ SOFTWARE.
 #if !defined(YASIO__NO_EXCEPTIONS)
 #  define YASIO__THROW(x, retval) throw(x)
 #  define YASIO__THROW0(x) throw(x)
-#  define YASIO__THROWV(x, val) (throw(x), (val))
 #else
 #  define YASIO__THROW(x, retval) return (retval)
 #  define YASIO__THROW0(x) return
-#  define YASIO__THROWV(x, val) (val)
 #endif
 
 // Compatibility with non-clang compilers...
@@ -159,6 +173,14 @@ SOFTWARE.
 #  define yasio__likely(exp) (!!(exp))
 #  define yasio__unlikely(exp) (!!(exp))
 #endif
+
+#ifdef __GNUC__
+#  define YASIO__UNUSED __attribute__((unused))
+#else
+#  define YASIO__UNUSED
+#endif
+
+#define YASIO__UNUSED_PARAM(param) (void)param
 
 #define YASIO__STD ::std::
 

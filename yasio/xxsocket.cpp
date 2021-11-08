@@ -1,7 +1,6 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 // A multi-platform support c++11 library with focus on asynchronous socket I/O for any
 // client application.
-//
 //////////////////////////////////////////////////////////////////////////////////////////
 /*
 The MIT License (MIT)
@@ -53,7 +52,7 @@ SOFTWARE.
 #  pragma warning(disable : 4996)
 #endif
 
-#if defined(_WIN32) && !defined(_WINSTORE)
+#if defined(_WIN32)
 static LPFN_ACCEPTEX __accept_ex                           = nullptr;
 static LPFN_GETACCEPTEXSOCKADDRS __get_accept_ex_sockaddrs = nullptr;
 static LPFN_CONNECTEX __connect_ex                         = nullptr;
@@ -287,8 +286,6 @@ int xxsocket::getipsv(void)
 
 void xxsocket::traverse_local_address(std::function<bool(const ip::endpoint&)> handler)
 {
-  int family = AF_UNSPEC;
-  bool done  = false;
   /* Only windows support use getaddrinfo to get local ip address(not loopback or linklocal),
     Because nullptr same as "localhost": always return loopback address and at unix/linux the
     gethostname always return "localhost"
@@ -310,26 +307,16 @@ void xxsocket::traverse_local_address(std::function<bool(const ip::endpoint&)> h
   const char* errmsg = nullptr;
   if (ailist != nullptr)
   {
-    for (auto aip = ailist; aip != NULL; aip = aip->ai_next)
+    for (auto aip = ailist; aip != nullptr; aip = aip->ai_next)
     {
-      family = aip->ai_family;
-      if (family == AF_INET || family == AF_INET6)
+      if (ep.as_is(aip))
       {
-        ep.as_is(aip);
         YASIO_LOGV("xxsocket::traverse_local_address: ip=%s", ep.ip().c_str());
-        switch (ep.af())
+        if (ep.is_global())
         {
-          case AF_INET:
-            if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) && !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
-              done = handler(ep);
-            break;
-          case AF_INET6:
-            if (IN6_IS_ADDR_GLOBAL(&ep.in6_.sin6_addr))
-              done = handler(ep);
+          if (handler(ep))
             break;
         }
-        if (done)
-          break;
       }
     }
     freeaddrinfo(ailist);
@@ -338,7 +325,7 @@ void xxsocket::traverse_local_address(std::function<bool(const ip::endpoint&)> h
   {
     errmsg = xxsocket::gai_strerror(iret);
   }
-#else // __APPLE__ or linux with <ifaddrs.h>
+#else // unix like systems with <ifaddrs.h>
   struct ifaddrs *ifaddr, *ifa;
   /*
   The value of ifa->ifa_name:
@@ -358,28 +345,18 @@ void xxsocket::traverse_local_address(std::function<bool(const ip::endpoint&)> h
 
   endpoint ep;
   /* Walk through linked list*/
-  for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
+  for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
   {
-    if (ifa->ifa_addr == NULL)
+    if (ifa->ifa_addr == nullptr)
       continue;
-    family = ifa->ifa_addr->sa_family;
-    if (family == AF_INET || family == AF_INET6)
+    if (ep.as_is(ifa->ifa_addr))
     {
-      ep.as_is(ifa->ifa_addr);
       YASIO_LOGV("xxsocket::traverse_local_address: ip=%s", ep.ip().c_str());
-      switch (ep.af())
+      if (ep.is_global())
       {
-        case AF_INET:
-          if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) && !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
-            done = handler(ep);
-          break;
-        case AF_INET6:
-          if (IN6_IS_ADDR_GLOBAL(&ep.in6_.sin6_addr))
-            done = handler(ep);
+        if (handler(ep))
           break;
       }
-      if (done)
-        break;
     }
   }
 
@@ -420,10 +397,9 @@ bool xxsocket::reopen(int af, int type, int protocol)
   return this->open(af, type, protocol);
 }
 
-#if defined(_WIN32) && !defined(_WINSTORE)
+#if defined(_WIN32)
 bool xxsocket::open_ex(int af, int type, int protocol)
 {
-#  if !defined(WP8)
   if (invalid_socket == this->fd)
   {
     this->fd = ::WSASocket(af, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
@@ -451,23 +427,19 @@ bool xxsocket::open_ex(int af, int type, int protocol)
     }
   }
   return is_open();
-#  else
-  return false;
-#  endif
 }
 
-#  if !defined(WP8)
 bool xxsocket::accept_ex(SOCKET sockfd_listened, SOCKET sockfd_prepared, PVOID lpOutputBuffer, DWORD dwReceiveDataLength, DWORD dwLocalAddressLength,
                          DWORD dwRemoteAddressLength, LPDWORD lpdwBytesReceived, LPOVERLAPPED lpOverlapped)
 {
-  return __accept_ex(sockfd_listened, sockfd_prepared, lpOutputBuffer, dwReceiveDataLength, dwLocalAddressLength, dwRemoteAddressLength, lpdwBytesReceived,
-                     lpOverlapped) != FALSE;
+  return !!__accept_ex(sockfd_listened, sockfd_prepared, lpOutputBuffer, dwReceiveDataLength, dwLocalAddressLength, dwRemoteAddressLength, lpdwBytesReceived,
+                       lpOverlapped);
 }
 
 bool xxsocket::connect_ex(SOCKET s, const struct sockaddr* name, int namelen, PVOID lpSendBuffer, DWORD dwSendDataLength, LPDWORD lpdwBytesSent,
                           LPOVERLAPPED lpOverlapped)
 {
-  return __connect_ex(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
+  return !!__connect_ex(s, name, namelen, lpSendBuffer, dwSendDataLength, lpdwBytesSent, lpOverlapped);
 }
 
 void xxsocket::translate_sockaddrs(PVOID lpOutputBuffer, DWORD dwReceiveDataLength, DWORD dwLocalAddressLength, DWORD dwRemoteAddressLength,
@@ -476,8 +448,6 @@ void xxsocket::translate_sockaddrs(PVOID lpOutputBuffer, DWORD dwReceiveDataLeng
   __get_accept_ex_sockaddrs(lpOutputBuffer, dwReceiveDataLength, dwLocalAddressLength, dwRemoteAddressLength, LocalSockaddr, LocalSockaddrLength,
                             RemoteSockaddr, RemoteSockaddrLength);
 }
-#  endif
-
 #endif
 
 bool xxsocket::is_open(void) const { return this->fd != invalid_socket; }
@@ -521,7 +491,7 @@ int xxsocket::test_nonblocking(socket_native_type s)
 }
 
 int xxsocket::bind(const char* addr, unsigned short port) const { return this->bind(endpoint(addr, port)); }
-int xxsocket::bind(const endpoint& ep) const { return ::bind(this->fd, &ep.sa_, ep.len()); }
+int xxsocket::bind(const endpoint& ep) const { return ::bind(this->fd, &ep, ep.len()); }
 int xxsocket::bind_any(bool ipv6) const { return this->bind(endpoint(!ipv6 ? "0.0.0.0" : "::", 0)); }
 
 int xxsocket::listen(int backlog) const { return ::listen(this->fd, backlog); }
@@ -562,18 +532,18 @@ int xxsocket::connect(socket_native_type s, const char* addr, u_short port)
 
   return xxsocket::connect(s, peer);
 }
-int xxsocket::connect(socket_native_type s, const endpoint& ep) { return ::connect(s, &ep.sa_, ep.len()); }
+int xxsocket::connect(socket_native_type s, const endpoint& ep) { return ::connect(s, &ep, ep.len()); }
 
 int xxsocket::connect_n(const char* addr, u_short port, const std::chrono::microseconds& wtimeout) { return connect_n(ip::endpoint(addr, port), wtimeout); }
 int xxsocket::connect_n(const endpoint& ep, const std::chrono::microseconds& wtimeout) { return this->connect_n(this->fd, ep, wtimeout); }
 int xxsocket::connect_n(socket_native_type s, const endpoint& ep, const std::chrono::microseconds& wtimeout)
 {
   fd_set rset, wset;
-  int n, error = 0;
+  int ret, error = 0;
 
   set_nonblocking(s, true);
 
-  if ((n = xxsocket::connect(s, ep)) < 0)
+  if ((ret = xxsocket::connect(s, ep)) < 0)
   {
     error = xxsocket::get_last_errno();
     if (error != EINPROGRESS && error != EWOULDBLOCK)
@@ -581,10 +551,10 @@ int xxsocket::connect_n(socket_native_type s, const endpoint& ep, const std::chr
   }
 
   /* Do whatever we want while the connect is taking place. */
-  if (n == 0)
+  if (ret == 0)
     goto done; /* connect completed immediately */
 
-  if ((n = xxsocket::select(s, &rset, &wset, NULL, wtimeout)) <= 0)
+  if ((ret = xxsocket::select(s, &rset, &wset, nullptr, wtimeout)) <= 0)
     error = xxsocket::get_last_errno();
   else if ((FD_ISSET(s, &rset) || FD_ISSET(s, &wset)))
   { /* Everythings are ok */
@@ -617,9 +587,35 @@ int xxsocket::connect_n(socket_native_type s, const endpoint& ep)
 int xxsocket::disconnect() const { return xxsocket::disconnect(this->fd); }
 int xxsocket::disconnect(socket_native_type s)
 {
-  sockaddr addr_unspec  = {0};
+#if defined(_WIN32)
+  sockaddr_storage addr_unspec{0};
+  return ::connect(s, (sockaddr*)&addr_unspec, sizeof(addr_unspec));
+#else
+  sockaddr addr_unspec{0};
   addr_unspec.sa_family = AF_UNSPEC;
-  return ::connect(s, &addr_unspec, sizeof(addr_unspec));
+  int ret, error;
+  for (;;)
+  {
+    ret = ::connect(s, &addr_unspec, sizeof(addr_unspec));
+    if (ret == 0)
+      return 0;
+    if ((error = xxsocket::get_last_errno()) == EINTR)
+      continue;
+#  if YASIO__OS_BSD_LIKE
+    /*
+     * From kernel source code of FreeBSD,NetBSD,OpenBSD,etc.
+     * The udp socket will be success disconnected by kernel function: `sodisconnect(upic_socket.c)`, then in the kernel, will continue try to
+     * connect with new sockaddr, but will failed with follow errno:
+     * a. EINVAL: addrlen mismatch
+     * b. EAFNOSUPPORT: family mismatch
+     * So, we just simply ignore them for the disconnect behavior.
+     */
+    return (error == EAFNOSUPPORT || error == EINVAL) ? 0 : -1;
+#  else
+    return ret;
+#  endif
+  }
+#endif
 }
 
 int xxsocket::send_n(const void* buf, int len, const std::chrono::microseconds& wtimeout, int flags)
@@ -730,13 +726,13 @@ int xxsocket::recv(socket_native_type s, void* buf, int len, int flags) { return
 
 int xxsocket::sendto(const void* buf, int len, const endpoint& to, int flags) const
 {
-  return static_cast<int>(::sendto(this->fd, (const char*)buf, len, flags, &to.sa_, to.len()));
+  return static_cast<int>(::sendto(this->fd, (const char*)buf, len, flags, &to, to.len()));
 }
 
 int xxsocket::recvfrom(void* buf, int len, endpoint& from, int flags) const
 {
   socklen_t addrlen{sizeof(from)};
-  int n = static_cast<int>(::recvfrom(this->fd, (char*)buf, len, flags, &from.sa_, &addrlen));
+  int n = static_cast<int>(::recvfrom(this->fd, (char*)buf, len, flags, &from, &addrlen));
   from.len(addrlen);
   return n;
 }
@@ -800,7 +796,7 @@ endpoint xxsocket::local_endpoint(socket_native_type fd)
 {
   endpoint ep;
   socklen_t socklen = sizeof(ep);
-  getsockname(fd, &ep.sa_, &socklen);
+  getsockname(fd, &ep, &socklen);
   ep.len(socklen);
   return ep;
 }
@@ -810,7 +806,7 @@ endpoint xxsocket::peer_endpoint(socket_native_type fd)
 {
   endpoint ep;
   socklen_t socklen = sizeof(ep);
-  getpeername(fd, &ep.sa_, &socklen);
+  getpeername(fd, &ep, &socklen);
   ep.len(socklen);
   return ep;
 }
@@ -818,19 +814,20 @@ endpoint xxsocket::peer_endpoint(socket_native_type fd)
 int xxsocket::set_keepalive(int flag, int idle, int interval, int probes) { return set_keepalive(this->fd, flag, idle, interval, probes); }
 int xxsocket::set_keepalive(socket_native_type s, int flag, int idle, int interval, int probes)
 {
-#if defined(_WIN32) && !defined(WP8) && !defined(_WINSTORE)
+#if defined(_WIN32)
   tcp_keepalive buffer_in;
   buffer_in.onoff             = flag;
   buffer_in.keepalivetime     = idle * 1000;
   buffer_in.keepaliveinterval = interval * 1000;
-
   return WSAIoctl(s, SIO_KEEPALIVE_VALS, &buffer_in, sizeof(buffer_in), nullptr, 0, (DWORD*)&probes, nullptr, nullptr);
 #else
-  int n = set_optval(s, SOL_SOCKET, SO_KEEPALIVE, flag);
-  n += set_optval(s, IPPROTO_TCP, TCP_KEEPIDLE, idle);
-  n += set_optval(s, IPPROTO_TCP, TCP_KEEPINTVL, interval);
-  n += set_optval(s, IPPROTO_TCP, TCP_KEEPCNT, probes);
-  return n;
+  if (set_optval(s, SOL_SOCKET, SO_KEEPALIVE, flag) != 0)
+    return -1;
+  if (set_optval(s, IPPROTO_TCP, TCP_KEEPIDLE, idle) != 0)
+    return -1;
+  if (set_optval(s, IPPROTO_TCP, TCP_KEEPINTVL, interval) != 0)
+    return -1;
+  return set_optval(s, IPPROTO_TCP, TCP_KEEPCNT, probes);
 #endif
 }
 
@@ -891,14 +888,12 @@ unsigned int xxsocket::tcp_rtt(socket_native_type s)
   if (status == 0)
     return info.RttUs;
 #  endif
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
   struct tcp_info info;
-  int length = sizeof(struct tcp_info);
   if (0 == xxsocket::get_optval(s, IPPROTO_TCP, TCP_INFO, info))
     return info.tcpi_rtt;
 #elif defined(__APPLE__)
   struct tcp_connection_info info;
-  int length = sizeof(struct tcp_connection_info);
   /*
   info.tcpi_srtt: average RTT in ms
   info.tcpi_rttcur: most recent RTT in ms
@@ -933,12 +928,12 @@ bool xxsocket::not_recv_error(int error) { return (error == EWOULDBLOCK || error
 
 const char* xxsocket::strerror(int error)
 {
-#if defined(_MSC_VER) && !defined(_WINSTORE)
+#if defined(_WIN32)
   static char error_msg[256];
   ZeroMemory(error_msg, sizeof(error_msg));
   ::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK /* remove line-end charactors \r\n */, NULL,
                    error, MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US), // english language
-                   error_msg, sizeof(error_msg), NULL);
+                   error_msg, sizeof(error_msg), nullptr);
 
   return error_msg;
 #else
