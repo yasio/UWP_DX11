@@ -5,7 +5,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2021 HALX99
+Copyright (c) 2012-2023 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -263,6 +263,8 @@ public:
       return cxx17::string_view{first_ + start, end - start};
     return cxx17::string_view{};
   }
+
+  bool eof() const { return ptr_ == last_; }
 
 protected:
   // will throw std::out_of_range

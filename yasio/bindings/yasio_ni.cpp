@@ -5,7 +5,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2012-2021 HALX99
+Copyright (c) 2012-2023 HALX99
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -173,6 +173,7 @@ YASIO_NI_API void yasio_set_option(void* service_ptr, int opt, const char* pszAr
     case YOPT_C_LOCAL_PORT:
     case YOPT_C_REMOTE_PORT:
     case YOPT_C_KCP_CONV:
+    case YOPT_C_UNPACK_NO_BSWAP:
       service->set_option(opt, svtoi(args[0]), svtoi(args[1]));
       break;
     case YOPT_C_ENABLE_MCAST:
